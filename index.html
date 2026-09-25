@@ -272,10 +272,18 @@ footer.foot{font-size:11px;color:#889;text-align:center;padding:14px 0;}
    </div>
   </section>
 
-  <!-- FACTURES -->
+  <!-- FACTURES / HISTORIQUE DES VENTES -->
   <section class="section" id="s-factures">
    <div class="panel">
-    <div class="row"><input id="fFactSearch" placeholder="Rechercher n° facture / client" oninput="renderFactures()"></div>
+    <h2>📅 Historique des ventes</h2>
+    <div class="row" style="align-items:flex-end">
+     <div><label class="small">Du</label><br><input type="date" id="fFactDateDebut" onchange="renderFactures()"></div>
+     <div><label class="small">Au</label><br><input type="date" id="fFactDateFin" onchange="renderFactures()"></div>
+     <button class="btn-gris" onclick="filtreVentesAujourdhui()">Aujourd'hui</button>
+     <button class="btn-gris" onclick="filtreVentesToutesDates()">Toutes les dates</button>
+     <input id="fFactSearch" placeholder="Rechercher n° facture / client" oninput="renderFactures()" style="flex:1;min-width:180px">
+    </div>
+    <div class="row" id="factSummary" style="margin-top:6px"></div>
     <div class="tablewrap"><table id="tblFactures"><thead><tr><th>N°</th><th>Date</th><th>Vendeur</th><th>Client</th><th>Total</th><th>Payé</th><th>Reste</th><th>Paiement</th><th>Statut</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
    </div>
   </section>
@@ -660,6 +668,8 @@ function refreshSection(s){
 }
 function initAll(){
  loadParamsForm(); updateHeaderInfo(); populateCatFilter(); autoBackupTick();
+ document.getElementById('fFactDateDebut').value=todayISO();
+ document.getElementById('fFactDateFin').value=todayISO();
 }
 function updateHeaderInfo(){
  document.getElementById('loginIni').textContent=db.parametres.ini||'QGB';
@@ -973,14 +983,41 @@ function annulerVente(id){
 }
 
 /* ===================== FACTURES / DOCUMENTS ===================== */
+function todayISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function filtreVentesAujourdhui(){
+ document.getElementById('fFactDateDebut').value=todayISO();
+ document.getElementById('fFactDateFin').value=todayISO();
+ renderFactures();
+}
+function filtreVentesToutesDates(){
+ document.getElementById('fFactDateDebut').value='';
+ document.getElementById('fFactDateFin').value='';
+ renderFactures();
+}
 function renderFactures(){
  const q=(document.getElementById('fFactSearch').value||'').toLowerCase();
+ const dDebut=document.getElementById('fFactDateDebut').value;
+ const dFin=document.getElementById('fFactDateFin').value;
  const tb=document.querySelector('#tblFactures tbody'); tb.innerHTML='';
  let rows=db.ventes.filter(v=>{
   const cli=v.clientId? (db.clients.find(c=>c.id===v.clientId)||{}).nom||'' : 'Client comptant';
-  return v.num.toLowerCase().includes(q)||cli.toLowerCase().includes(q);
+  const okTexte = v.num.toLowerCase().includes(q)||cli.toLowerCase().includes(q);
+  const vJour=new Date(v.date); const vISO=vJour.getFullYear()+'-'+String(vJour.getMonth()+1).padStart(2,'0')+'-'+String(vJour.getDate()).padStart(2,'0');
+  const okDebut = !dDebut || vISO>=dDebut;
+  const okFin = !dFin || vISO<=dFin;
+  return okTexte && okDebut && okFin;
  });
  if(!isAdmin()) rows=rows.filter(v=>v.vendeur===currentUser.nom);
+ const actives=rows.filter(v=>!v.annulee);
+ const nb=actives.length;
+ const totalVentes=actives.reduce((a,v)=>a+v.total,0);
+ const totalEncaisse=actives.reduce((a,v)=>a+v.paye,0);
+ const totalReste=actives.reduce((a,v)=>a+v.reste,0);
+ document.getElementById('factSummary').innerHTML=
+  `<div class="card"><h3>Nombre de ventes</h3><p>${nb}</p></div>
+   <div class="card"><h3>Total ventes</h3><p>${fmt(totalVentes)}</p></div>
+   <div class="card"><h3>Total encaissé</h3><p>${fmt(totalEncaisse)}</p></div>
+   <div class="card"><h3>Reste à percevoir</h3><p>${fmt(totalReste)}</p></div>`;
  rows.slice().reverse().forEach(v=>{
   const cli=v.clientId? (db.clients.find(c=>c.id===v.clientId)||{}).nom||'—' : 'Client comptant';
   let statut = v.annulee? '<span class="badge annule">🔴 Annulée</span>' : (v.reste>0? '<span class="badge credit">🟠 Crédit</span>' : '<span class="badge paye">🟢 Payée</span>');
