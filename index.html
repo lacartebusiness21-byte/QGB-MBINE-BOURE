@@ -6,15 +6,12 @@
 <title>Gestion Quincaillerie Générale Mine Boure — V3</title>
 
 <!-- PWA : installation sur Android et iPhone -->
-<link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0d2b4e">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="icon" href="icon-192.png">
 <!-- iOS : icône + mode plein écran depuis l'écran d'accueil -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="QGMB Caisse">
-<link rel="apple-touch-icon" href="icon-192.png">
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
@@ -134,6 +131,7 @@ footer.foot{font-size:11px;color:#889;text-align:center;padding:14px 0;}
   <input id="loginUser" placeholder="Identifiant">
   <input id="loginPass" type="password" placeholder="Mot de passe">
   <button onclick="doLogin()">Se connecter</button>
+  <button type="button" id="btnInstallLogin" onclick="installerApp()" style="margin-top:8px;background:#f5820b">📲 Installer l'application</button>
   <div class="err" id="loginErr"></div>
   <div class="demo">Identifiants de démonstration :<br>Admin — admin / admin123<br>Vendeur — vendeur / vendeur123</div>
  </div>
@@ -171,7 +169,7 @@ footer.foot{font-size:11px;color:#889;text-align:center;padding:14px 0;}
    </div>
    <div style="display:flex;gap:8px;align-items:center">
     <input class="searchbar" id="globalSearch" placeholder="Recherche (produit, réf, client, tél, fournisseur, facture...)">
-    <button class="btn-bleu btn-sm" onclick="installerApp()">📲 Installer l'app</button>
+    <button class="btn-bleu btn-sm" id="btnInstallTop" onclick="installerApp()">📲 Installer l'app</button>
     <button class="btn-gris" onclick="logout()">Déconnexion</button>
    </div>
   </header>
@@ -569,7 +567,7 @@ function migrate(){
 }
 if(!db){ db=defaultDB(); seedDemo(); save(); } else { migrate(); save(); }
 
-function save(){ localStorage.setItem('quincDB_mineboure', JSON.stringify(db)); }
+function save(){ try{ localStorage.setItem('quincDB_mineboure', JSON.stringify(db)); }catch(e){ toast('⚠️ Sauvegarde impossible (stockage plein ou bloqué). Faites une sauvegarde manuelle.'); } }
 function autoBackupTick(){
  try{ localStorage.setItem('quincDB_mineboure_auto', JSON.stringify({date:new Date().toISOString(),data:db})); }catch(e){}
  const el=document.getElementById('autoBackupInfo');
@@ -584,7 +582,7 @@ function restoreAutoBackup(){
 }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function fmt(n){ return (Math.round((n||0)*100)/100).toLocaleString('fr-FR')+' '+db.parametres.devise; }
-function todayISO(){ return new Date().toISOString().slice(0,10); }
+function todayISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function toast(msg){ const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.getElementById('toastBox').appendChild(t); setTimeout(()=>t.remove(),2500); }
 function logJournal(action,ref){ db.journal.push({date:new Date().toISOString(),user:currentUser?currentUser.nom:'—',action,ref:ref||''}); save(); }
 
@@ -951,7 +949,7 @@ function validerVente(){
  logJournal('Vente',num);
  panier=[]; document.getElementById('venteRemise').value=0; document.getElementById('venteMontantRecu').value=''; remiseAutorisationOK=false;
  renderPanier(); renderProduits(); renderVenteRecherche(); renderPosStats();
- toast('✅ Vente enregistrée'); toast('✅ Stock mis à jour'); toast('✅ Paiement enregistré');
+ toast('✅ Vente enregistrée, stock et paiement mis à jour');
  openFacture(vente.id);
 }
 function demanderAnnulation(id){
@@ -983,7 +981,6 @@ function annulerVente(id){
 }
 
 /* ===================== FACTURES / DOCUMENTS ===================== */
-function todayISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function filtreVentesAujourdhui(){
  document.getElementById('fFactDateDebut').value=todayISO();
  document.getElementById('fFactDateFin').value=todayISO();
@@ -1656,15 +1653,45 @@ function showModal(html){ document.getElementById('modalContent').innerHTML=html
 function closeModal(){ document.getElementById('modalBg').classList.remove('show'); }
 document.getElementById('modalBg').addEventListener('click',e=>{ if(e.target.id==='modalBg') closeModal(); });
 
-/* ===================== PWA : SERVICE WORKER ===================== */
+/* ===================== PWA : INSTALLATION (100% inline) ===================== */
+(function setupPWA(){
+ try{
+  const mk=s=>{ const c=document.createElement('canvas'); c.width=c.height=s; const x=c.getContext('2d');
+   x.fillStyle='#0d2b4e'; x.fillRect(0,0,s,s); x.fillStyle='#f5820b'; x.beginPath(); x.arc(s/2,s/2,s*0.36,0,7); x.fill();
+   x.fillStyle='#fff'; x.font='bold '+Math.round(s*0.2)+'px Arial'; x.textAlign='center'; x.textBaseline='middle'; x.fillText('QGMB',s/2,s/2); return c.toDataURL('image/png'); };
+  const i192=mk(192), i512=mk(512);
+  const add=(rel,href)=>{ const l=document.createElement('link'); l.rel=rel; l.href=href; document.head.appendChild(l); };
+  add('icon',i192); add('apple-touch-icon',i192);
+  const base=location.href.split('#')[0];
+  const manifest={name:(db&&db.parametres&&db.parametres.nom)||'Quincaillerie Générale Mine Boure',short_name:'QGMB Caisse',start_url:base,scope:base.replace(/[^\/]*$/,''),display:'standalone',orientation:'any',background_color:'#0d2b4e',theme_color:'#0d2b4e',lang:'fr',
+   icons:[{src:i192,sizes:'192x192',type:'image/png',purpose:'any'},{src:i512,sizes:'512x512',type:'image/png',purpose:'any'}]};
+  add('manifest',URL.createObjectURL(new Blob([JSON.stringify(manifest)],{type:'application/manifest+json'})));
+ }catch(e){}
+})();
 if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
  window.addEventListener('load',()=>{ navigator.serviceWorker.register('service-worker.js').catch(()=>{}); });
 }
 let deferredInstallPrompt=null;
-window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredInstallPrompt=e; });
-function installerApp(){
- if(deferredInstallPrompt){ deferredInstallPrompt.prompt(); deferredInstallPrompt=null; }
- else toast('Utilisez le menu du navigateur : "Ajouter à l\'écran d\'accueil" / "Installer l\'application"');
+const isStandalone=()=> window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true;
+const isIOS=()=> /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+function majBoutonsInstall(){
+ const hide=isStandalone();
+ ['btnInstallTop','btnInstallLogin'].forEach(id=>{ const b=document.getElementById(id); if(b) b.style.display= hide?'none':''; });
+}
+window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredInstallPrompt=e; majBoutonsInstall(); });
+window.addEventListener('appinstalled',()=>{ deferredInstallPrompt=null; majBoutonsInstall(); toast('✅ Application installée'); });
+window.addEventListener('load',majBoutonsInstall);
+async function installerApp(){
+ if(deferredInstallPrompt){
+  deferredInstallPrompt.prompt();
+  try{ await deferredInstallPrompt.userChoice; }catch(e){}
+  deferredInstallPrompt=null; majBoutonsInstall(); return;
+ }
+ if(isIOS()){
+  showModal('<h2>📲 Installer sur iPhone / iPad</h2><p style="margin:10px 0">1. Ouvrez cette page dans <b>Safari</b>.</p><p style="margin:10px 0">2. Touchez le bouton <b>Partager</b> (carré avec flèche ⬆️).</p><p style="margin:10px 0">3. Choisissez <b>« Sur l\'écran d\'accueil »</b>, puis <b>Ajouter</b>.</p><button class="btn-bleu" onclick="closeModal()" style="margin-top:10px">OK</button>');
+  return;
+ }
+ showModal('<h2>📲 Installer l\'application</h2><p style="margin:10px 0">Ouvrez le menu <b>⋮</b> de Chrome puis choisissez <b>« Installer l\'application »</b> ou <b>« Ajouter à l\'écran d\'accueil »</b>.</p><p class="small">Si l\'option n\'apparaît pas, rechargez la page une fois (connexion internet requise la première fois).</p><button class="btn-bleu" onclick="closeModal()" style="margin-top:10px">OK</button>');
 }
 </script>
 </body>
